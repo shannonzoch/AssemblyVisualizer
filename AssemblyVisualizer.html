@@ -1,0 +1,940 @@
+<!-- Assembly Visualizer -->
+
+<!--
+  This is designed to be a teaching tool to assist in demonstrating assembly programming
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assembly Language Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #d1d5db; /* text-gray-300 */
+        }
+        .fira-code {
+            font-family: 'Fira Code', monospace;
+        }
+        .highlight-line {
+            background-color: #374151; /* bg-gray-700 */
+        }
+        .data-changed {
+            background-color: #4f46e5; /* bg-indigo-600 */
+            transition: background-color 0.1s ease-in-out;
+        }
+        .data-normal {
+            background-color: #1f2937; /* bg-gray-800 */
+            transition: background-color 0.5s ease-in-out;
+        }
+        .highlight-manual {
+            border: 2px solid #f59e0b !important; /* amber-500 */
+            box-shadow: 0 0 8px #f59e0b;
+        }
+        .register-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.5rem; /* Reduced gap */
+        }
+        .ram-grid {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+        .stack-view {
+            overflow-y: auto;
+        }
+        .stack-pointer {
+            border: 2px solid #10b981 !important; /* emerald-500 */
+        }
+        .stack-base-pointer {
+            border: 2px solid #ef4444 !important; /* red-500 */
+        }
+        .btn {
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .btn:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .flag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .flag-set {
+            background-color: #10b981; /* bg-emerald-500 */
+            color: #fff;
+        }
+        .flag-unset {
+            background-color: #4b5563; /* bg-gray-600 */
+            color: #d1d5db;
+        }
+        .panel-container > .panel {
+            min-width: 150px;
+        }
+        .resizer-v {
+            background-color: #4b5563;
+            cursor: col-resize;
+            width: 8px;
+            flex-shrink: 0;
+            border-radius: 4px;
+            z-index: 10;
+        }
+        .resizer-v:hover {
+            background-color: #6b7280;
+        }
+        .resizer-h {
+            background-color: #4b5563;
+            cursor: row-resize;
+            height: 8px;
+            width: 100%;
+            border-radius: 4px;
+            z-index: 10;
+        }
+        .resizer-h:hover {
+             background-color: #6b7280;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+    <div class="w-full">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white">Assembly Language Simulator</h1>
+            <p class="text-lg text-gray-400 mt-2">Step through code and visualize register and memory changes.</p>
+        </header>
+
+        <div class="space-y-3">
+            <!-- Top Row: Code Editor -->
+            <div class="bg-gray-800 p-6 rounded-xl shadow-lg flex flex-col">
+                <h2 class="text-2xl font-semibold text-white mb-4">Code Editor</h2>
+                <textarea id="codeInput" class="fira-code w-full flex-grow bg-gray-900 text-gray-200 p-4 rounded-lg border-2 border-gray-700 focus:border-indigo-500 focus:ring-indigo-500 outline-none resize-none" spellcheck="false" style="height: 350px;">
+section .data
+    prompt_msg db "Enter a number (simulated as '42'): ", 0
+    result_msg db "Result + 15 = ", 0
+    newline db 0x0a, 0
+    space db ' ', 0
+
+section .bss
+    input_buffer resb 16
+    output_buffer resb 16
+
+section .text
+    global _start
+
+_start:
+    MOV ECX, prompt_msg
+    CALL _print_string
+    CALL _read_integer
+    ADD EAX, 15
+    MOV ECX, result_msg
+    CALL _print_string
+    MOV EDI, EAX
+    CALL _print_integer
+    CALL _print_newline
+    MOV EAX, 1
+    XOR EBX, EBX
+    INT 0x80
+
+_print_string:
+    PUSH EBP
+    MOV EBP, ESP
+    PUSH ECX 
+    MOV EDX, 0
+.count_loop:
+    CMP byte [ECX + EDX], 0
+    JE .do_print
+    INC EDX
+    JMP .count_loop
+.do_print:
+    MOV EAX, 4
+    MOV EBX, 1
+    INT 0x80
+    POP ECX
+    MOV ESP, EBP
+    POP EBP
+    RET
+
+_read_integer:
+    MOV byte [input_buffer], '4'
+    MOV byte [input_buffer+1], '2'
+    MOV byte [input_buffer+2], 0
+    MOV ESI, input_buffer
+    XOR EAX, EAX
+.atoi_loop:
+    MOVZX ECX, byte [ESI]
+    INC ESI
+    CMP ECX, '0'
+    JB .atoi_done
+    CMP ECX, '9'
+    JA .atoi_done
+    SUB ECX, '0'
+    IMUL EAX, 10
+    ADD EAX, ECX
+    JMP .atoi_loop
+.atoi_done:
+    RET
+
+_print_integer:
+    MOV EAX, EDI
+    MOV ESI, output_buffer + 15
+    MOV byte [ESI], 0
+    DEC ESI
+    MOV EBX, 10
+.itoa_loop:
+    XOR EDX, EDX
+    DIV EBX
+    ADD EDX, '0'
+    MOV [ESI], DL
+    DEC ESI
+    TEST EAX, EAX
+    JNZ .itoa_loop
+.itoa_print:
+    INC ESI
+    MOV ECX, ESI
+    CALL _print_string
+    RET
+    
+_print_newline:
+    MOV EAX, 4
+    MOV EBX, 1
+    MOV ECX, newline
+    MOV EDX, 1
+    INT 0x80
+    RET
+</textarea>
+                <div class="mt-4 flex flex-wrap gap-2">
+                    <button id="resetButton" class="btn flex-grow bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Apply Code & Reset</button>
+                    <button id="importButton" class="btn flex-grow bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg">Import from File</button>
+                    <input type="file" id="fileInput" class="hidden" accept=".asm,.txt">
+                    <button id="exportButton" class="btn flex-grow bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg">Export to File</button>
+                </div>
+            </div>
+
+            <!-- Middle Row: Visualizations -->
+            <div id="middle-row" class="panel-container flex flex-row" style="height: 420px;">
+                <!-- Terminal -->
+                 <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg flex flex-col" style="width: 25%;">
+                    <h2 class="text-2xl font-semibold text-white mb-4">Terminal</h2>
+                    <div class="bg-black p-4 rounded-lg fira-code flex-grow">
+                        <div class="text-green-400">
+                            <p><span class="text-gray-500">$</span> nasm -f elf32 -o prog.o code.asm</p>
+                            <p><span class="text-gray-500">$</span> ld -m elf_i386 -o prog prog.o</p>
+                            <p><span class="text-gray-500">$</span> ./prog</p>
+                        </div>
+                        <h4 class="text-md font-semibold text-gray-400 mt-3 mb-1">Screen Output:</h4>
+                        <pre id="screenOutput" class="text-white bg-gray-900 p-2 rounded h-24 whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+                <div class="resizer-v"></div>
+                <!-- Execution View -->
+                <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg flex flex-col" style="width: 25%;">
+                    <h2 class="text-2xl font-semibold text-white mb-4 flex-shrink-0">Execution View</h2>
+                    <div id="codeLinesDiv" class="fira-code w-full flex-grow bg-gray-900 text-gray-200 p-4 rounded-lg border-2 border-gray-700 overflow-y-auto"></div>
+                     <div class="mt-4 flex items-center justify-between space-x-2 flex-shrink-0">
+                        <button id="stepButton" class="btn w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Step</button>
+                        <button id="runButton" class="btn w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg">Run</button>
+                    </div>
+                    <div class="mt-4 flex-shrink-0">
+                        <label for="speedSlider" class="block text-sm font-medium text-gray-400 text-center">Run Speed</label>
+                        <input id="speedSlider" type="range" min="125" max="2500" value="250" step="25" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Fast</span>
+                            <span>Slow</span>
+                        </div>
+                    </div>
+                    <div id="statusMessage" class="mt-4 text-center text-sm text-yellow-400 h-5 flex-shrink-0"></div>
+                </div>
+                <div class="resizer-v"></div>
+                <!-- Registers Panel -->
+                <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg" style="width: 25%;">
+                    <h2 class="text-2xl font-semibold text-white mb-4">CPU Registers</h2>
+                    <div class="register-grid">
+                        <div id="reg-EAX" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EAX</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-EBX" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EBX</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-ECX" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">ECX</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-EDX" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EDX</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-ESI" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">ESI</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-EDI" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EDI</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-ESP" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">ESP</span><span class="fira-code text-lg">0x00000400</span></div>
+                        <div id="reg-EBP" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EBP</span><span class="fira-code text-lg">0x00000000</span></div>
+                        <div id="reg-EIP" class="data-normal p-2 rounded-lg flex justify-between items-center"><span class="font-bold text-lg">EIP</span><span class="fira-code text-lg">0x00000000</span></div>
+                    </div>
+                    <div class="mt-4 data-normal p-2 rounded-lg">
+                        <h3 class="font-bold text-lg mb-2 text-center">FLAGS</h3>
+                        <div id="reg-FLAGS" class="flex justify-center items-center space-x-4">
+                            <div><span class="font-semibold">ZF:</span> <span id="flag-ZF" class="flag flag-unset">0</span></div>
+                            <div><span class="font-semibold">SF:</span> <span id="flag-SF" class="flag flag-unset">0</span></div>
+                            <div><span class="font-semibold">OF:</span> <span id="flag-OF" class="flag flag-unset">0</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="resizer-v"></div>
+                <!-- Stack Panel -->
+                <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg flex flex-col" style="width: 25%;"><h2 class="text-2xl font-semibold text-white mb-4">Stack</h2><div id="stack-container" class="stack-view space-y-1 pr-2 flex-grow"></div></div>
+            </div>
+
+            <div class="resizer-h"></div>
+
+            <!-- Bottom Row: RAM, Heap -->
+            <div id="bottom-row" class="panel-container flex flex-row">
+                <!-- RAM Panel -->
+                <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg flex-grow" style="width: 50%;">
+                    <h2 class="text-2xl font-semibold text-white mb-4">RAM</h2>
+                    <div id="ram-container" class="ram-grid"></div>
+                </div>
+                <div class="resizer-v"></div>
+                <!-- Heap Panel -->
+                <div class="panel bg-gray-800 p-6 rounded-xl shadow-lg flex-grow" style="width: 50%;">
+                    <h2 class="text-2xl font-semibold text-white mb-4">Heap / Data</h2>
+                    <div id="heap-container" class="ram-grid"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // DOM Elements
+        const codeInput = document.getElementById('codeInput');
+        const stepButton = document.getElementById('stepButton');
+        const resetButton = document.getElementById('resetButton');
+        const runButton = document.getElementById('runButton');
+        const importButton = document.getElementById('importButton');
+        const exportButton = document.getElementById('exportButton');
+        const fileInput = document.getElementById('fileInput');
+        const screenOutput = document.getElementById('screenOutput');
+
+        const ramContainer = document.getElementById('ram-container');
+        const heapContainer = document.getElementById('heap-container');
+        const stackContainer = document.getElementById('stack-container');
+        const statusMessage = document.getElementById('statusMessage');
+        const codeLinesDiv = document.getElementById('codeLinesDiv');
+        const speedSlider = document.getElementById('speedSlider');
+
+        // Simulator State
+        const DWORDS_IN_RAM = 1024;
+        const RAM_SIZE_BYTES = DWORDS_IN_RAM * 4;
+        let registers = {};
+        let memory = new Uint8Array(RAM_SIZE_BYTES);
+        let codeLines = []; 
+        let labels = {};
+        let dataDefs = {};
+        let isRunning = false;
+        let runInterval = null;
+        let dataSegmentPointer = 300 * 4; // Byte address
+
+        // --- Memory Helpers ---
+        function readDword(address) {
+            if (address < 0 || address + 3 >= RAM_SIZE_BYTES) return 0;
+            let val = 0;
+            val |= memory[address];
+            val |= memory[address + 1] << 8;
+            val |= memory[address + 2] << 16;
+            val |= memory[address + 3] << 24;
+            return val;
+        }
+
+        function writeDword(address, value) {
+            if (address < 0 || address + 3 >= RAM_SIZE_BYTES) return;
+            memory[address] = value & 0xFF;
+            memory[address + 1] = (value >> 8) & 0xFF;
+            memory[address + 2] = (value >> 16) & 0xFF;
+            memory[address + 3] = (value >> 24) & 0xFF;
+        }
+        
+        // --- Initialization ---
+        function resetCpu() {
+             registers = {
+                EAX: 0, EBX: 0, ECX: 0, EDX: 0,
+                ESI: 0, EDI: 0,
+                ESP: RAM_SIZE_BYTES, EBP: 0, EIP: 0,
+                FLAGS: { ZF: 0, SF: 0, OF: 0, CF: 0 }
+            };
+            memory.fill(0);
+            screenOutput.textContent = '';
+        }
+        
+        async function loadAndVisualizeCode() {
+            [resetButton, stepButton, runButton, importButton, exportButton].forEach(btn => btn.disabled = true);
+            if (runInterval) clearInterval(runInterval);
+            isRunning = false;
+            runButton.textContent = 'Run';
+            
+            resetCpu();
+            updateAllUI(); 
+
+            codeLines = []; 
+            labels = {};
+            dataDefs = {};
+
+            const rawCode = codeInput.value;
+            const allDisplayLines = rawCode.split('\n');
+            let currentSection = null;
+            let currentDataAddr = dataSegmentPointer;
+
+            statusMessage.textContent = 'Loading .data section into memory...';
+            
+            const dataLines = [];
+            allDisplayLines.forEach(line => {
+                let trimmedLine = line.split(';')[0].trim();
+                if (trimmedLine.toLowerCase().startsWith('section .data')) currentSection = 'data';
+                else if (trimmedLine.toLowerCase().startsWith('section .bss')) currentSection = 'bss';
+                else if (trimmedLine.toLowerCase().startsWith('section .text')) currentSection = 'text';
+                
+                if (currentSection === 'data' && trimmedLine && !trimmedLine.toLowerCase().startsWith('section')) {
+                    dataLines.push({line: trimmedLine, type: 'data'});
+                } else if (currentSection === 'bss' && trimmedLine && !trimmedLine.toLowerCase().startsWith('section')) {
+                    dataLines.push({line: trimmedLine, type: 'bss'});
+                }
+            });
+
+            for (const item of dataLines) {
+                 const parts = item.line.split(/\s+/);
+                 const name = parts[0];
+                 const directive = parts[1].toLowerCase();
+                 const valueStr = item.line.substring(item.line.indexOf(directive) + directive.length).trim();
+                 
+                 dataDefs[name] = currentDataAddr;
+
+                 if (item.type === 'data') {
+                     if (directive === 'db') {
+                         const stringMatch = valueStr.match(/(["'])(.*?[^\\])\1/);
+                         if (stringMatch) {
+                             const stringValue = stringMatch[2].replace(/\\n/g, '\n');
+                             for (const char of stringValue) {
+                                memory[currentDataAddr] = char.charCodeAt(0);
+                                flashElement(document.getElementById(`mem-${Math.floor(currentDataAddr/4)}`));
+                                await new Promise(res => setTimeout(res, 20));
+                                currentDataAddr++;
+                             }
+                         }
+                         if (valueStr === '0') {
+                            memory[currentDataAddr] = 0;
+                            flashElement(document.getElementById(`mem-${Math.floor(currentDataAddr/4)}`));
+                            await new Promise(res => setTimeout(res, 20));
+                            currentDataAddr++;
+                          }
+                     } else if (directive === 'equ') {
+                        const expression = valueStr.replace(/\$/g, currentDataAddr);
+                        const [val1Str, op, val2Str] = expression.split(/\s+/);
+                        if (op === '-') {
+                            const val1 = dataDefs[val1Str] !== undefined ? dataDefs[val1Str] : currentDataAddr;
+                            const val2 = dataDefs[val2Str];
+                            dataDefs[name] = val1 - val2;
+                        }
+                     }
+                 } else if (item.type === 'bss') {
+                    if (directive === 'resb') {
+                        const size = parseInt(valueStr);
+                        if (!isNaN(size)) currentDataAddr += size;
+                    }
+                 }
+            }
+            updateHeapUI();
+
+            statusMessage.textContent = 'Parsing .text section...';
+            codeLinesDiv.innerHTML = '';
+            currentSection = null;
+            
+            allDisplayLines.forEach((line, lineIndex) => {
+                 let trimmedLine = line.split(';')[0].trim();
+                if (trimmedLine.toLowerCase().startsWith('section .')) {
+                    currentSection = trimmedLine.toLowerCase().split('.')[1].trim();
+                }
+                if (currentSection === 'text' && trimmedLine) {
+                     if (trimmedLine.startsWith('global')) return;
+                     const labelMatch = trimmedLine.match(/^([a-zA-Z0-9_.]+:)/);
+                     if (labelMatch) {
+                        const label = labelMatch[1].slice(0, -1);
+                        labels[label] = codeLines.length;
+                        trimmedLine = trimmedLine.substring(labelMatch[1].length).trim();
+                     }
+                     if (trimmedLine) {
+                       const parts = trimmedLine.replace(/,/g, ' ').split(/\s+/).filter(p => p);
+                       codeLines.push({ instruction: parts[0].toUpperCase(), operands: parts.slice(1), displayLineIndex: lineIndex });
+                    }
+                }
+            });
+
+            let instructionIndex = 0;
+            allDisplayLines.forEach((line, idx) => {
+                const lineDiv = document.createElement('div');
+                lineDiv.className = 'whitespace-pre pr-2 flex cursor-pointer hover:bg-gray-700/50';
+                lineDiv.addEventListener('click', () => handleLineClick(line));
+                let instructionLine = codeLines.find(cl => cl.displayLineIndex === idx);
+                
+                if (instructionLine) {
+                   const address = (codeLines.indexOf(instructionLine)).toString(16).padStart(4, '0').toUpperCase();
+                   lineDiv.innerHTML = `<span class="text-gray-500 w-12 flex-shrink-0">${address}:</span><span>${line}</span>`;
+                } else {
+                    lineDiv.innerHTML = `<span class="text-gray-500 w-12 flex-shrink-0"></span><span>${line || ' '}</span>`;
+                }
+                codeLinesDiv.appendChild(lineDiv);
+            });
+            
+            if (labels.hasOwnProperty('_start')) registers.EIP = labels['_start'];
+            
+            updateAllUI();
+            statusMessage.textContent = 'Code loaded. Ready to run.';
+            [resetButton, stepButton, runButton, importButton, exportButton].forEach(btn => btn.disabled = false);
+        }
+
+
+        function initialUISetup() {
+            stepButton.disabled = true;
+            runButton.disabled = true;
+            statusMessage.textContent = 'Edit code and click "Apply Code & Reset" to start.';
+            codeLinesDiv.innerHTML = `<p class="text-gray-500 p-4">Execution view will appear here...</p>`;
+            resetCpu();
+            updateRegisterUI();
+            updateRamUI();
+            updateHeapUI();
+            updateStackUI();
+            initResizers();
+        }
+        
+        function formatHex(value) {
+            if (typeof value === 'undefined') return '0x????????';
+            if (value < 0) return '-0x' + (-value).toString(16).padStart(8, '0').toUpperCase();
+            return '0x' + value.toString(16).padStart(8, '0').toUpperCase();
+        }
+        
+        function updateRegisterUI() {
+            for (const reg in registers) {
+                if (reg !== 'FLAGS') {
+                    const regElement = document.getElementById(`reg-${reg}`);
+                    if (regElement) regElement.children[1].textContent = formatHex(registers[reg]);
+                } else {
+                    for (const flag in registers.FLAGS) {
+                         const flagElement = document.getElementById(`flag-${flag}`);
+                         if(flagElement) {
+                             flagElement.textContent = registers.FLAGS[flag];
+                             flagElement.className = `flag ${registers.FLAGS[flag] ? 'flag-set' : 'flag-unset'}`;
+                         }
+                    }
+                }
+            }
+        }
+
+        function updateRamUI() {
+            ramContainer.innerHTML = '';
+            for (let i = 96; i < 128; i++) {
+                const addr = i * 4;
+                const cell = document.createElement('div');
+                cell.id = `mem-${i}`;
+                cell.className = 'data-normal fira-code p-2 text-sm rounded-md flex flex-col items-center';
+                cell.innerHTML = `<span class="text-xs text-gray-400">${addr}</span><span>${formatHex(readDword(addr))}</span>`;
+                ramContainer.appendChild(cell);
+            }
+        }
+
+        function updateHeapUI() {
+            heapContainer.innerHTML = '';
+            for (let i = 0; i < 64; i+=4) {
+                 const addr = dataSegmentPointer + i;
+                 const dwordIndex = Math.floor(addr/4);
+                 const cell = document.createElement('div');
+                 cell.id = `mem-${dwordIndex}`;
+                 cell.className = 'data-normal fira-code p-2 text-sm rounded-md flex flex-col items-center';
+                 cell.innerHTML = `<span class="text-xs text-gray-400">${addr}</span><span>${formatHex(readDword(addr))}</span>`;
+                 heapContainer.appendChild(cell);
+            }
+        }
+
+        function updateStackUI() {
+            stackContainer.innerHTML = '';
+            
+            const visibleAddresses = new Set();
+            if (registers.ESP < RAM_SIZE_BYTES) visibleAddresses.add(registers.ESP);
+            if (registers.EBP > 0 && registers.EBP < RAM_SIZE_BYTES) visibleAddresses.add(registers.EBP);
+
+            visibleAddresses.forEach(point => {
+                for(let i = -16; i < 48; i+=4) {
+                    const addr = point + i;
+                    if(addr >= 0 && addr < RAM_SIZE_BYTES) visibleAddresses.add(addr);
+                }
+            });
+            
+            const sortedAddresses = Array.from(visibleAddresses).sort((a,b) => a-b);
+            
+            let lastAddr = -5;
+            sortedAddresses.forEach(i => {
+                if (i > lastAddr + 4 && lastAddr !== -5) {
+                    const dots = document.createElement('div');
+                    dots.className = 'text-center text-gray-500 fira-code';
+                    dots.textContent = '...';
+                    stackContainer.appendChild(dots);
+                }
+                
+                const dwordIndex = Math.floor(i/4);
+                const cell = document.createElement('div');
+                cell.id = `mem-${dwordIndex}`;
+                cell.className = 'data-normal fira-code p-2 rounded-lg flex justify-between items-center text-lg';
+                if (i === registers.ESP) cell.classList.add('stack-pointer');
+                if (i === registers.EBP) cell.classList.add('stack-base-pointer');
+                cell.innerHTML = `<span class="text-xs text-gray-400 w-10">${i}:</span><span>${formatHex(readDword(i))}</span>`;
+                stackContainer.appendChild(cell);
+                lastAddr = i;
+            });
+        }
+
+        function updateCodeHighlight() {
+            const displayLines = codeLinesDiv.querySelectorAll('div');
+            displayLines.forEach(el => el.classList.remove('highlight-line'));
+
+            if (registers.EIP >= 0 && registers.EIP < codeLines.length) {
+                const currentInstruction = codeLines[registers.EIP];
+                if(currentInstruction) {
+                    const lineToHighlight = displayLines[currentInstruction.displayLineIndex];
+                    if (lineToHighlight) {
+                         lineToHighlight.classList.add('highlight-line');
+                         lineToHighlight.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            }
+        }
+
+        function updateAllUI() {
+            updateRegisterUI();
+            updateRamUI();
+            updateHeapUI();
+            updateStackUI();
+            updateCodeHighlight();
+        }
+
+        function flashElement(element) {
+            if (element) {
+                element.classList.remove('data-normal');
+                element.classList.add('data-changed');
+                setTimeout(() => {
+                    element.classList.remove('data-changed');
+                    element.classList.add('data-normal');
+                }, 400);
+            }
+        }
+        
+        function clearManualHighlights() {
+            document.querySelectorAll('.highlight-manual').forEach(el => el.classList.remove('highlight-manual'));
+        }
+
+        function handleLineClick(lineText) {
+             if (isRunning) return;
+            clearManualHighlights();
+        }
+        
+        function getPartialRegister(regName) {
+            const reg = regName.toUpperCase();
+            if (reg.endsWith('L')) return registers[reg.slice(0, -1) + 'X'] & 0xFF;
+            if (reg.endsWith('H')) return (registers[reg.slice(0, -1) + 'X'] >> 8) & 0xFF;
+            return 0;
+        }
+
+        function setPartialRegister(regName, value) {
+             const reg = regName.toUpperCase();
+             const baseReg = reg.slice(0, -1) + 'X';
+             if (reg.endsWith('L')) {
+                registers[baseReg] = (registers[baseReg] & 0xFFFFFF00) | (value & 0xFF);
+             } else if (reg.endsWith('H')) {
+                registers[baseReg] = (registers[baseReg] & 0xFFFF00FF) | ((value & 0xFF) << 8);
+             }
+        }
+
+        function resolveOperand(operand, readFromMemory = true) {
+            operand = operand.trim();
+            const upperOperand = operand.toUpperCase();
+            
+            if (registers.hasOwnProperty(upperOperand)) return { type: 'register', value: upperOperand, size: 'dword' };
+            if (['AL', 'AH', 'BL', 'BH', 'CL', 'CH', 'DL', 'DH'].includes(upperOperand)) return { type: 'register', value: upperOperand, size: 'byte' };
+            if (dataDefs.hasOwnProperty(operand)) {
+                const val = dataDefs[operand];
+                return (typeof val === 'number') ? { type: 'address', value: val } : { type: 'immediate', value: val };
+            }
+            if (labels.hasOwnProperty(operand)) return { type: 'immediate', value: labels[operand] };
+            if (operand.startsWith("'") && operand.endsWith("'")) return { type: 'immediate', value: operand.charCodeAt(1) };
+            if (!isNaN(parseInt(operand))) return { type: 'immediate', value: parseInt(operand) };
+
+            const memMatch = operand.match(/^(byte|dword)\s*\[(.+)\]$/i);
+            if (memMatch || (operand.startsWith('[') && operand.endsWith(']'))) {
+                const size = memMatch ? memMatch[1].toLowerCase() : 'dword';
+                const inner = memMatch ? memMatch[2] : operand.slice(1, -1);
+                
+                const parts = inner.split(/([+-])/).map(p => p.trim());
+                let finalAddress = getValue(parts[0]);
+
+                if (parts.length === 3) {
+                    const op = parts[1];
+                    let offsetVal = getValue(parts[2]);
+                    if (op === '+') finalAddress += offsetVal;
+                    else finalAddress -= offsetVal;
+                }
+                
+                if (readFromMemory) {
+                    if (finalAddress < 0 || finalAddress >= RAM_SIZE_BYTES) throw new Error(`Memory access violation at address: ${finalAddress}`);
+                    const memValue = (size === 'dword') ? readDword(finalAddress) : memory[finalAddress];
+                    return { type: 'memory', value: memValue, size: size, address: finalAddress };
+                } else {
+                    return { type: 'memory', value: finalAddress, size: size, address: finalAddress };
+                }
+            }
+
+            throw new Error(`Invalid operand: ${operand}`);
+        }
+
+
+        function getValue(operand) {
+            const res = resolveOperand(operand, true);
+            if (res.type === 'register') {
+                return (res.size === 'dword') ? registers[res.value] : getPartialRegister(res.value);
+            }
+            return res.value; 
+        }
+
+        function setValue(operand, value) {
+            const res = resolveOperand(operand, false); 
+            if (res.type === 'register') {
+                if(res.size === 'dword') registers[res.value] = value;
+                else setPartialRegister(res.value, value);
+                flashElement(document.getElementById(`reg-${res.value.length === 3 ? res.value.slice(0,-1)+'X' : res.value}`));
+            } else if (res.type === 'memory' || res.type === 'address') {
+                if (res.value >= 0 && res.value < RAM_SIZE_BYTES) {
+                    if (res.size === 'dword') writeDword(res.value, value);
+                    else memory[res.value] = value & 0xFF;
+                    flashElement(document.getElementById(`mem-${Math.floor(res.value / 4)}`));
+                } else {
+                    throw new Error(`Memory access violation at address: ${res.value}`);
+                }
+            } else {
+                throw new Error(`Invalid destination operand: ${operand}`);
+            }
+        }
+        
+        function setFlagsForArith(result, val1, val2, isSubtraction, size) {
+            const isByte = size === 'byte';
+            const mask = isByte ? 0xFF : 0xFFFFFFFF;
+            const signBit = isByte ? 0x80 : 0x80000000;
+
+            registers.FLAGS.ZF = (result & mask) === 0 ? 1 : 0;
+            registers.FLAGS.SF = (result & signBit) !== 0 ? 1 : 0;
+            if (isSubtraction) {
+                 registers.FLAGS.OF = (((val1 & signBit) !== (val2 & signBit)) && ((val2 & signBit) === (result & signBit))) ? 1 : 0;
+                 registers.FLAGS.CF = (val1 < val2) ? 1 : 0; // Unsigned borrow
+            } else { 
+                 registers.FLAGS.OF = (((val1 & signBit) === (val2 & signBit)) && ((val1 & signBit) !== (result & signBit))) ? 1 : 0;
+                 registers.FLAGS.CF = (result > mask) ? 1 : 0; // Unsigned carry
+            }
+        }
+        
+        function handleSyscall() {
+            switch(registers.EAX) {
+                case 1: 
+                    statusMessage.textContent = `Program exited with code ${registers.EBX}.`;
+                    if(runInterval) clearInterval(runInterval);
+                    isRunning = false; runButton.textContent = 'Run';
+                    registers.EIP = codeLines.length; 
+                    break;
+                case 3: break;
+                case 4:
+                    const fd = registers.EBX, msgAddr = registers.ECX, msgLen = registers.EDX;
+                    if (fd === 1) {
+                        let output = '';
+                        for(let i=0; i < msgLen; i++) {
+                             const charCode = memory[msgAddr+i];
+                             if(charCode > 0) output += String.fromCharCode(charCode);
+                        }
+                        screenOutput.textContent += output;
+                    }
+                    break;
+                default: throw new Error(`Unknown syscall: ${registers.EAX}`);
+            }
+        }
+
+        // --- Execution Engine ---
+        function step() {
+            if (registers.EIP >= codeLines.length) {
+                statusMessage.textContent = "End of program.";
+                if(runInterval) clearInterval(runInterval); isRunning = false; runButton.textContent = 'Run';
+                return;
+            }
+
+            const { instruction, operands } = codeLines[registers.EIP];
+            let nextEIP = registers.EIP + 1;
+
+            try {
+                let val1, val2, res, op1, op2;
+                switch (instruction) {
+                    case 'MOV': setValue(operands[0], getValue(operands[1])); break;
+                    case 'MOVZX': setValue(operands[0], getValue(operands[1])); break;
+                    case 'ADD':
+                        op1 = resolveOperand(operands[0]); op2 = resolveOperand(operands[1]);
+                        res = op1.value + op2.value;
+                        setFlagsForArith(res, op1.value, op2.value, false, op1.size);
+                        setValue(operands[0], res);
+                        break;
+                    case 'SUB':
+                        op1 = resolveOperand(operands[0]); op2 = resolveOperand(operands[1]);
+                        res = op1.value - op2.value;
+                        setFlagsForArith(res, op1.value, op2.value, true, op1.size);
+                        setValue(operands[0], res);
+                        break;
+                    case 'INC':
+                        op1 = resolveOperand(operands[0]);
+                        res = op1.value + 1;
+                        setFlagsForArith(res, op1.value, 1, false, op1.size);
+                        setValue(operands[0], res);
+                        break;
+                    case 'DEC':
+                        op1 = resolveOperand(operands[0]);
+                        res = op1.value - 1;
+                        setFlagsForArith(res, op1.value, 1, true, op1.size);
+                        setValue(operands[0], res);
+                        break;
+                    case 'IMUL': setValue(operands[0], getValue(operands[0]) * getValue(operands[1])); break;
+                    case 'DIV':
+                        val1 = registers.EAX; val2 = getValue(operands[0]);
+                        if(val2 === 0) throw new Error("Division by zero");
+                        registers.EAX = Math.floor(val1 / val2);
+                        registers.EDX = val1 % val2;
+                        flashElement(document.getElementById('reg-EAX')); flashElement(document.getElementById('reg-EDX'));
+                        break;
+                    case 'XOR':
+                        res = getValue(operands[0]) ^ getValue(operands[1]);
+                        setValue(operands[0], res);
+                        registers.FLAGS.ZF = res === 0 ? 1 : 0; registers.FLAGS.SF = res < 0 ? 1 : 0; registers.FLAGS.OF = 0; registers.FLAGS.CF = 0;
+                        break;
+                    case 'CMP':
+                        op1 = resolveOperand(operands[0]); op2 = resolveOperand(operands[1]);
+                        res = op1.value - op2.value;
+                        setFlagsForArith(res, op1.value, op2.value, true, op1.size);
+                        break;
+                    case 'TEST':
+                        res = getValue(operands[0]) & getValue(operands[1]);
+                        registers.FLAGS.ZF = res === 0 ? 1 : 0; registers.FLAGS.SF = res < 0 ? 1 : 0; registers.FLAGS.OF = 0; registers.FLAGS.CF = 0;
+                        break;
+                    case 'INT': if (getValue(operands[0]) === 0x80) handleSyscall(); break;
+                    case 'JMP': nextEIP = getValue(operands[0]); break;
+                    case 'JE': case 'JZ': if (registers.FLAGS.ZF === 1) nextEIP = getValue(operands[0]); break;
+                    case 'JNE': case 'JNZ': if (registers.FLAGS.ZF === 0) nextEIP = getValue(operands[0]); break;
+                    case 'JG': case 'JNLE': if (registers.FLAGS.ZF === 0 && registers.FLAGS.SF === registers.FLAGS.OF) nextEIP = getValue(operands[0]); break;
+                    case 'JGE': case 'JNL': if (registers.FLAGS.SF === registers.FLAGS.OF) nextEIP = getValue(operands[0]); break;
+                    case 'JL': case 'JNGE': if (registers.FLAGS.SF !== registers.FLAGS.OF) nextEIP = getValue(operands[0]); break;
+                    case 'JLE': case 'JNG': if (registers.FLAGS.ZF === 1 || registers.FLAGS.SF !== registers.FLAGS.OF) nextEIP = getValue(operands[0]); break;
+                    case 'JA': case 'JNBE': if (registers.FLAGS.CF === 0 && registers.FLAGS.ZF === 0) nextEIP = getValue(operands[0]); break;
+                    case 'JAE': case 'JNB': if (registers.FLAGS.CF === 0) nextEIP = getValue(operands[0]); break;
+                    case 'JB': case 'JNAE': if (registers.FLAGS.CF === 1) nextEIP = getValue(operands[0]); break;
+                    case 'JBE': case 'JNA': if (registers.FLAGS.CF === 1 || registers.FLAGS.ZF === 1) nextEIP = getValue(operands[0]); break;
+                    case 'PUSH':
+                        registers.ESP -= 4;
+                        writeDword(registers.ESP, getValue(operands[0]));
+                        flashElement(document.getElementById(`reg-ESP`));
+                        break;
+                    case 'POP':
+                        setValue(operands[0], readDword(registers.ESP));
+                        registers.ESP += 4;
+                        flashElement(document.getElementById(`reg-ESP`));
+                        break;
+                    case 'CALL':
+                        registers.ESP -= 4;
+                        writeDword(registers.ESP, nextEIP);
+                        nextEIP = getValue(operands[0]);
+                        flashElement(document.getElementById(`reg-ESP`));
+                        break;
+                    case 'RET':
+                        nextEIP = readDword(registers.ESP);
+                        registers.ESP += 4;
+                        flashElement(document.getElementById(`reg-ESP`));
+                        break;
+                    default: throw new Error(`Unknown instruction: ${instruction}`);
+                }
+                registers.EIP = nextEIP;
+                statusMessage.textContent = '';
+            } catch (e) {
+                statusMessage.textContent = e.message;
+                if(runInterval) clearInterval(runInterval); isRunning = false; runButton.textContent = 'Run';
+            }
+            updateAllUI();
+        }
+
+        function initResizers() {
+            document.querySelectorAll('.resizer-v').forEach(resizer => {
+                let prev, next, startX, prevW, nextW;
+                resizer.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    prev = resizer.previousElementSibling; next = resizer.nextElementSibling;
+                    startX = e.clientX; prevW = prev.getBoundingClientRect().width; nextW = next.getBoundingClientRect().width;
+                    document.body.style.cursor = 'col-resize';
+                    document.addEventListener('mousemove', mouseMoveHandler);
+                    document.addEventListener('mouseup', mouseUpHandler);
+                });
+                const mouseMoveHandler = (e) => {
+                    const dx = e.clientX - startX;
+                    const newPrevW = prevW + dx, newNextW = nextW - dx;
+                    if (newPrevW > 150 && newNextW > 150) {
+                        prev.style.width = `${(newPrevW / prev.parentElement.getBoundingClientRect().width) * 100}%`;
+                        next.style.width = `${(newNextW / prev.parentElement.getBoundingClientRect().width) * 100}%`;
+                    }
+                };
+                const mouseUpHandler = () => { document.removeEventListener('mousemove', mouseMoveHandler); document.removeEventListener('mouseup', mouseUpHandler); document.body.style.cursor = 'default'; };
+            });
+            const hResizer = document.querySelector('.resizer-h');
+            if (hResizer) {
+                 let middle, startY, middleH;
+                 hResizer.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    middle = document.getElementById('middle-row');
+                    startY = e.clientY; middleH = middle.getBoundingClientRect().height;
+                    document.body.style.cursor = 'row-resize';
+                    document.addEventListener('mousemove', mouseMoveHandler);
+                    document.addEventListener('mouseup', mouseUpHandler);
+                });
+                 const mouseMoveHandler = (e) => {
+                    const newH = middleH + (e.clientY - startY);
+                    if (newH > 250 && newH < (document.body.clientHeight - 200)) middle.style.height = `${newH}px`;
+                };
+                 const mouseUpHandler = () => { document.removeEventListener('mousemove', mouseMoveHandler); document.removeEventListener('mouseup', mouseUpHandler); document.body.style.cursor = 'default'; };
+            }
+        }
+
+        // --- Event Listeners ---
+        resetButton.addEventListener('click', () => { loadAndVisualizeCode(); });
+        stepButton.addEventListener('click', () => { if (!isRunning) step(); });
+        runButton.addEventListener('click', () => {
+            if(isRunning) { clearInterval(runInterval); isRunning = false; runButton.textContent = 'Run'; } 
+            else { isRunning = true; runButton.textContent = 'Pause'; step(); runInterval = setInterval(step, parseInt(speedSlider.value, 10)); }
+        });
+        speedSlider.addEventListener('input', () => { if (isRunning) { clearInterval(runInterval); runInterval = setInterval(step, parseInt(speedSlider.value, 10)); } });
+        importButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => { codeInput.value = e.target.result; loadAndVisualizeCode(); };
+                reader.readAsText(file);
+            }
+        });
+        exportButton.addEventListener('click', () => {
+            const a = document.createElement('a');
+            a.href = window.URL.createObjectURL(new Blob([codeInput.value], { type: 'text/plain' }));
+            a.download = 'code.asm';
+            a.click();
+        });
+        initialUISetup();
+    });
+    </script>
+</body>
+</html>
